@@ -11,20 +11,19 @@ import java.net.*;
 public class WebServer {
 	@SuppressWarnings("resource")
     public static void main(String[] args) {
-	    if (args.length != 1) {
-	        System.out.println("usage: <classname> + <port>");
+	    if (args.length != 2) {
+	        System.out.println("usage: " + args[0] + " <port>");
 	    }
-	    int port = Integer.valueOf(args[0]);
+	    int port = Integer.valueOf(args[1]);
 	    ServerSocket serverSocket = null;
-	    //Open a socket on the port
+	    //Open a socket on port 80
 	    try {
 	        serverSocket = new ServerSocket(port);
-	    }
+	    } 
 	    catch (IOException e) {
-	        System.err.println("Could not listen on port: " + port + ".");
+	        System.err.println("Could not listen on port: 80.");
             System.exit(1);
 	    }
-	    System.out.println("Web server is working.");
 	    while (true) {
 	        Socket clientSocket = null;
 	        try {
