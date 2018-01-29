@@ -1,5 +1,6 @@
 import java.io.*;
 import java.net.*;
+import java.text.SimpleDateFormat;
 import java.util.*;
 /**
  * This handler deals with each client request.
@@ -181,9 +182,13 @@ public class ClientHandler implements Runnable {
      * Send response to the client.
      */
     private void sendResponse() {
-        String httpDate = 
+        //String httpDate = 
         writer.println("HTTP/1.1 200 OK");
-        writer.println("Date: ")
+        writer.println("Date: " + getTime());
+        writer.println("Last-Modified: " + getLastModifiedTime(file));
+        writer.println("Connection: Keep-Alive");
+        writer.println("Accept-Ranges: bytes");
+        //writer.println();
         writer.println("");
     }
     /**
@@ -201,7 +206,19 @@ public class ClientHandler implements Runnable {
         input.close();
         output.close();
     }
+
     private String getTime() {
-        Calendar calendar = C
+        Calendar calendar = Calendar.getInstance();
+        SimpleDateFormat sdf = new SimpleDateFormat(
+                "EEE, dd MMM yyyy HH:mm:ss zzz");
+        sdf.setTimeZone(TimeZone.getTimeZone("GMT"));
+        return sdf.format(calendar.getTime());
+    }
+
+    private String getLastModifiedTime(File f) {
+        SimpleDateFormat sdf = new SimpleDateFormat(
+                "EEE, dd MMM yyyy HH:mm:ss zzz");
+        sdf.setTimeZone(TimeZone.getTimeZone("GMT"));
+        return sdf.format(f.lastModified());
     }
 }
