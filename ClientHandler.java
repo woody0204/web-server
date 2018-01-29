@@ -7,6 +7,7 @@ import java.util.*;
  *
  */
 public class ClientHandler implements Runnable {
+    private static final int MAX_BUFFER = 2048;
     /**
      * The client socket that this handler needs to serve.
      */
@@ -48,6 +49,10 @@ public class ClientHandler implements Runnable {
      */
     private Map<String, String> headers;
     /**
+     * The file requested.
+     */
+    private File file;
+    /**
      * Constructor using the client socket.
      * @param socket the client socket
      */
@@ -56,21 +61,43 @@ public class ClientHandler implements Runnable {
             clientSocket = socket;
             reader = new BufferedReader(
                     new InputStreamReader(clientSocket.getInputStream()));
-            PrintWriter out = new PrintWriter(
+            writer = new PrintWriter(
                     clientSocket.getOutputStream(), true);
             headers = new HashMap<>();
         }
         catch (IOException e) {
             System.err.println("Read failed.");
-            System.exit(1);
+            Thread.currentThread().interrupt();
         }
     }
     @Override
     public void run() {
-        // TODO Auto-generated method stub
-
+        //parse request
+        try {
+            parse();
+        }
+        catch (Exception e) {
+            Thread.currentThread().interrupt();
+        }
+        //find the file
+        try {
+            findFile();
+        }
+        catch (FileNotFoundException e) {
+            writer.println("404 Not Found");
+            Thread.currentThread().interrupt();
+        }
+        sendResponse();
+        //send back the file
+        try {
+            sendFile();
+        }
+        catch (IOException ex) {
+            writer.println("500 Internal Server Error");
+            Thread.currentThread().interrupt();
+        }
     }
-    public void parse() throws Exception {
+    private void parse() throws Exception {
         /**
          * Parse the request to get file path and headers.
          */
@@ -122,5 +149,39 @@ public class ClientHandler implements Runnable {
                 filePath = uri.substring(pathIdx);
             }
         }
+    }
+    /**
+     * Find the file.
+     * @throws FileNotFoundException 
+     */
+    private void findFile() throws FileNotFoundException {
+        String absolutePath = System.getProperty("user.dir") + "/content" + filePath;
+        System.out.println(absolutePath);
+        file = new File(absolutePath);
+        if (!file.exists()) {
+            throw new FileNotFoundException();
+        }
+    }
+    /**
+     * Send response to the client.
+     */
+    private void sendResponse() {
+        writer.println("HTTP/1.1 200 OK");
+        writer.println("");
+    }
+    /**
+     * Send file and send it to the client.
+     * @throws IOException 
+     */
+    private void sendFile() throws IOException {
+        FileInputStream input = new FileInputStream(file);
+        DataOutputStream output = new DataOutputStream(clientSocket.getOutputStream());
+        byte[] buffer = new byte[MAX_BUFFER];
+        while (input.read(buffer) > 0) {
+            output.write(buffer);
+            output.flush();
+        }
+        input.close();
+        output.close();
     }
 }
