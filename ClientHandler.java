@@ -149,6 +149,21 @@ public class ClientHandler implements Runnable {
                 filePath = uri.substring(pathIdx);
             }
         }
+	//Parse headers.
+        while ((inputLine = reader.readLine()) != null) {
+            if (inputLine.length() == 0) {
+                break;
+            }
+            int colonIdx;
+            colonIdx = inputLine.indexOf(':');
+            if (colonIdx == -1)
+                continue;
+            else
+                headers.put(inputLine.substring(0, colonIdx), inputLine.substring(colonIdx + 1));
+        }
+        //Parse request entity.
+        while ((inputLine = reader.readLine()) != null) {
+        }
     }
     /**
      * Find the file.
@@ -166,7 +181,9 @@ public class ClientHandler implements Runnable {
      * Send response to the client.
      */
     private void sendResponse() {
+        String httpDate = 
         writer.println("HTTP/1.1 200 OK");
+        writer.println("Date: ")
         writer.println("");
     }
     /**
@@ -183,5 +200,8 @@ public class ClientHandler implements Runnable {
         }
         input.close();
         output.close();
+    }
+    private String getTime() {
+        Calendar calendar = C
     }
 }
