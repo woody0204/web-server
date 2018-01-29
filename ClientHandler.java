@@ -90,13 +90,7 @@ public class ClientHandler implements Runnable {
         }
         sendResponse();
         //send back the file
-        try {
-            sendFile();
-        }
-        catch (IOException ex) {
-            writer.println("500 Internal Server Error");
-            Thread.currentThread().interrupt();
-        }
+        
     }
     private void parse() throws Exception {
         /**
@@ -152,7 +146,7 @@ public class ClientHandler implements Runnable {
         }
 	//Parse headers.
         while ((inputLine = reader.readLine()) != null) {
-            if (inputLine.length() == 0) {
+            if (inputLine.compareTo("\r\n") == 0) {
                 break;
             }
             int colonIdx;
@@ -162,9 +156,12 @@ public class ClientHandler implements Runnable {
             else
                 headers.put(inputLine.substring(0, colonIdx), inputLine.substring(colonIdx + 1));
         }
+        
         //Parse request entity.
         while ((inputLine = reader.readLine()) != null) {
         }
+        
+        reader.close();
     }
     /**
      * Find the file.
@@ -188,8 +185,42 @@ public class ClientHandler implements Runnable {
         writer.println("Last-Modified: " + getLastModifiedTime(file));
         writer.println("Connection: Keep-Alive");
         writer.println("Accept-Ranges: bytes");
-        //writer.println();
-        writer.println("");
+        
+        if (headers.containsKey("Range")) {
+            RangeHeader rangeHeader = new RangeHeader(headers.get("Range"));
+            
+            if (rangeHeader.isValid()) {
+                List<RangeHeader.Range> listOfRanges = rangeHeader.ranges;
+                if (listOfRanges.size() == 1) {
+                    RangeHeader.Range range = listOfRanges.get(0);
+                    int lb = range.getStart();
+                    int rb = range.getEnd();
+                    writer.println("Content-Range: bytes " + 
+                    Integer.toString(lb) + "-" + 
+                    Integer.toString(rb) + "/" + 
+                    Long.toString(file.length()));
+                    writer.println("Content-Length: " + 
+                    Integer.toString(rb - lb + 1));
+                    writer.println("Content-Type: " + parseType(filePath));
+                    writer.print("\r\n");
+                    try {
+                        sendFile();
+                    }
+                    catch (IOException ex) {
+                        //writer.println("500 Internal Server Error");
+                        Thread.currentThread().interrupt();
+                    }
+                    
+                } else {
+                    
+                }
+            } else {
+                writer.print("\r\n");
+            }
+        } else {
+            writer.print("\r\n");
+        }
+        writer.close();
     }
     /**
      * Send file and send it to the client.
@@ -206,7 +237,11 @@ public class ClientHandler implements Runnable {
         input.close();
         output.close();
     }
-
+    
+    /**
+     * Get the current server time and convert it to http date.
+     * @return
+     */
     private String getTime() {
         Calendar calendar = Calendar.getInstance();
         SimpleDateFormat sdf = new SimpleDateFormat(
@@ -215,10 +250,55 @@ public class ClientHandler implements Runnable {
         return sdf.format(calendar.getTime());
     }
 
+    /**
+     * Get the last modified time of the file and convert it to http date.
+     * @param f
+     * @return
+     */
     private String getLastModifiedTime(File f) {
         SimpleDateFormat sdf = new SimpleDateFormat(
                 "EEE, dd MMM yyyy HH:mm:ss zzz");
         sdf.setTimeZone(TimeZone.getTimeZone("GMT"));
         return sdf.format(f.lastModified());
+    }
+    
+    /**
+     * Parse the type of the file and return the Content-Type.
+     * @param f
+     * @return
+     */
+    private String parseType(String path) {
+        int idx = path.lastIndexOf('.');
+        if (idx == -1)
+            return "application/octet-stream";
+        String suffix = path.substring(idx);
+        switch (suffix) {
+        case ".txt":
+            return "text/plain";
+        case ".css":
+            return "text/css";
+        case ".html":
+            return "text/html";
+        case ".htm":
+            return "text/html";
+        case ".gif":
+            return "image/gif";
+        case ".jpg":
+            return "image/jpeg";
+        case ".jpeg":
+            return "image/jpeg";
+        case ".png":
+            return "image/png";
+        case ".js":
+            return "application/javascript";
+        case ".mp4":
+            return "video/webm";
+        case ".webm":
+            return "video/webm";
+        case ".ogg":
+            return "video/webm";
+        default:
+            return "application/octet-stream";    
+        }
     }
 }
