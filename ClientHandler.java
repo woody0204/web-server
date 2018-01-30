@@ -8,6 +8,13 @@ import java.util.*;
  *
  */
 public class ClientHandler implements Runnable {
+    /**
+     * Whether the thread needs to stop in advance.
+     */
+    private boolean isStop;
+    /**
+     * The size of buffer used to transmit file.
+     */
     private static final int MAX_BUFFER = 2048;
     /**
      * The client socket that this handler needs to serve.
@@ -65,32 +72,40 @@ public class ClientHandler implements Runnable {
             writer = new PrintWriter(
                     clientSocket.getOutputStream(), true);
             headers = new HashMap<>();
+            isStop = false;
         }
         catch (IOException e) {
             System.err.println("Read failed.");
             Thread.currentThread().interrupt();
+            isStop = true;
         }
     }
     @Override
     public void run() {
         //parse request
-        try {
-            parse();
-        }
-        catch (Exception e) {
-            Thread.currentThread().interrupt();
+        if (!isStop) {
+            try {
+                parse();
+            }
+            catch (Exception e) {
+                isStop = true;
+            }
         }
         //find the file
-        try {
-            findFile();
+        if (!isStop) {
+            try {
+                findFile();
+            }
+            catch (FileNotFoundException e) {
+                writer.println("HTTP/1.1 404 Not Found");
+                writer.println("");
+                isStop = true;
+            }
         }
-        catch (FileNotFoundException e) {
-            writer.println("404 Not Found");
-            Thread.currentThread().interrupt();
+        if (!isStop) {
+            sendResponse();
         }
-        sendResponse();
-        //send back the file
-        
+        writer.close();
     }
     private void parse() throws Exception {
         /**
@@ -99,7 +114,7 @@ public class ClientHandler implements Runnable {
         String inputLine;
         
         //Parse the first the request line
-        inputLine = reader.readLine();
+        inputLine = reader.readLine();        
         String[] line = inputLine.split("\\s+");
         if (line.length != 3) {
             writer.println("400 Bad Request");
@@ -146,7 +161,7 @@ public class ClientHandler implements Runnable {
         }
 	//Parse headers.
         while ((inputLine = reader.readLine()) != null) {
-            if (inputLine.compareTo("\r\n") == 0) {
+            if (inputLine.length() == 0) {
                 break;
             }
             int colonIdx;
@@ -156,19 +171,15 @@ public class ClientHandler implements Runnable {
             else
                 headers.put(inputLine.substring(0, colonIdx), inputLine.substring(colonIdx + 1));
         }
-        
         //Parse request entity.
-        while ((inputLine = reader.readLine()) != null) {
-        }
         
-        reader.close();
     }
     /**
      * Find the file.
      * @throws FileNotFoundException 
      */
     private void findFile() throws FileNotFoundException {
-        String absolutePath = System.getProperty("user.dir") + "/content" + filePath;
+        String absolutePath = "content" + filePath;
         System.out.println(absolutePath);
         file = new File(absolutePath);
         if (!file.exists()) {
@@ -179,62 +190,102 @@ public class ClientHandler implements Runnable {
      * Send response to the client.
      */
     private void sendResponse() {
-        //String httpDate = 
-        writer.println("HTTP/1.1 200 OK");
-        writer.println("Date: " + getTime());
-        writer.println("Last-Modified: " + getLastModifiedTime(file));
-        writer.println("Connection: Keep-Alive");
-        writer.println("Accept-Ranges: bytes");
-        
-        if (headers.containsKey("Range")) {
-            RangeHeader rangeHeader = new RangeHeader(headers.get("Range"));
-            
-            if (rangeHeader.isValid()) {
-                List<RangeHeader.Range> listOfRanges = rangeHeader.ranges;
-                if (listOfRanges.size() == 1) {
-                    RangeHeader.Range range = listOfRanges.get(0);
-                    int lb = range.getStart();
-                    int rb = range.getEnd();
+        long start = 0, end = file.length() - 1;
+        if (headers.containsKey("Range")) { //request contains range
+            RangeHeader rangeHeader = 
+                    new RangeHeader(headers.get("Range"), file.length());
+            if (rangeHeader.isValid()) { //range of header in request is valid
+                if (rangeHeader.isSatisfiable()) { //range is satisfiable
+                    writer.println("HTTP/1.1 206 Partial Content");
+                    writer.println("Date: " + getTime());
+                    writer.println("Last-Modified: " + getLastModifiedTime(file));
+                    writer.println("Connection: Keep-Alive");
+                    writer.println("Accept-Ranges: bytes");
+                    List<RangeHeader.Range> listOfRanges = rangeHeader.ranges;
+                    if (listOfRanges.size() == 1) {
+                        RangeHeader.Range range = listOfRanges.get(0);
+                        long lb = range.getStart();
+                        long rb = range.getEnd();
+                        writer.println("Content-Range: bytes " + 
+                        Long.toString(lb) + "-" + 
+                        Long.toString(rb) + "/" + 
+                        Long.toString(file.length()));
+                        writer.println("Content-Length: " + 
+                        Long.toString(rb - lb + 1));
+                        writer.println("Content-Type: " + parseType(filePath));
+                        writer.println("");
+                        start = lb;
+                        end = rb;
+                    }
+                } else { //range is not satisfiable
+                    writer.println("HTTP/1.1 416 Requested range not satisfiable");
+                    writer.println("Date: " + getTime());
+                    writer.println("Last-Modified: " + getLastModifiedTime(file));
+                    writer.println("Connection: Keep-Alive");
+                    writer.println("Accept-Ranges: bytes");
                     writer.println("Content-Range: bytes " + 
-                    Integer.toString(lb) + "-" + 
-                    Integer.toString(rb) + "/" + 
-                    Long.toString(file.length()));
-                    writer.println("Content-Length: " + 
-                    Integer.toString(rb - lb + 1));
+                            "*" + "/" + 
+                            Long.toString(file.length()));
+                    writer.println("Content-Length: " + file.length());
                     writer.println("Content-Type: " + parseType(filePath));
-                    writer.print("\r\n");
-                    try {
-                        sendFile();
-                    }
-                    catch (IOException ex) {
-                        //writer.println("500 Internal Server Error");
-                        Thread.currentThread().interrupt();
-                    }
-                    
-                } else {
-                    
+                    writer.println("");
                 }
-            } else {
-                writer.print("\r\n");
+            } else { //range of header in request is not valid
+                writer.println("HTTP/1.1 200 OK");
+                writer.println("Date: " + getTime());
+                writer.println("Last-Modified: " + getLastModifiedTime(file));
+                writer.println("Connection: Keep-Alive");
+                writer.println("Accept-Ranges: bytes");
+                writer.println("Content-Length: " + file.length());
+                writer.println("Content-Type: " + parseType(filePath));
+                writer.println("");
             }
-        } else {
-            writer.print("\r\n");
+        } else {  //request doesn't contain range
+            writer.println("HTTP/1.1 200 OK");
+            writer.println("Date: " + getTime());
+            writer.println("Last-Modified: " + getLastModifiedTime(file));
+            writer.println("Connection: Keep-Alive");
+            writer.println("Accept-Ranges: bytes");
+            writer.println("Content-Length: " + file.length());
+            writer.println("Content-Type: " + parseType(filePath));
+            writer.println("");
         }
-        writer.close();
+        try {
+            sendFile(start, end);
+        }
+        catch (IOException ex) {
+            System.out.println("transmit failed");
+        }
     }
     /**
      * Send file and send it to the client.
      * @throws IOException 
      */
-    private void sendFile() throws IOException {
-        FileInputStream input = new FileInputStream(file);
+    private void sendFile(long start, long end) throws IOException {
+        RandomAccessFile rFile = new RandomAccessFile(file, "r");
+        rFile.seek(start);
+//        FileInputStream input = new FileInputStream(file);
         DataOutputStream output = new DataOutputStream(clientSocket.getOutputStream());
         byte[] buffer = new byte[MAX_BUFFER];
-        while (input.read(buffer) > 0) {
+//        long itr = start / MAX_BUFFER;
+//        int remainder = (int)start % MAX_BUFFER;
+//        for (int i = 0; i < itr; i++) {
+//            input.read(buffer, 0, MAX_BUFFER);
+//        }
+//        input.read(buffer, 0, remainder);
+//        buffer = new byte[MAX_BUFFER];
+        long itr = (end - start + 1) / MAX_BUFFER;
+        int remainder = (int)(end - start + 1) % MAX_BUFFER;
+        for (int i = 0; i < itr; i++) {
+            rFile.read(buffer, 0, MAX_BUFFER);
             output.write(buffer);
             output.flush();
         }
-        input.close();
+        rFile.read(buffer, 0, remainder);
+        output.write(buffer);
+        output.flush();
+        
+        rFile.close();
         output.close();
     }
     
@@ -292,11 +343,11 @@ public class ClientHandler implements Runnable {
         case ".js":
             return "application/javascript";
         case ".mp4":
-            return "video/webm";
+            return "video/mp4";
         case ".webm":
             return "video/webm";
         case ".ogg":
-            return "video/webm";
+            return "video/ogg";
         default:
             return "application/octet-stream";    
         }
