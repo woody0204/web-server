@@ -37,10 +37,6 @@ public class ClientHandler implements Runnable {
      */
     private String uri;
     /**
-     * Http version, 1: http/1.1, 0: http/1.0.
-     */
-    private int version;
-    /**
      * The file path the the client requests.
      */
     private String filePath;
@@ -118,18 +114,16 @@ public class ClientHandler implements Runnable {
         String[] line = inputLine.split("\\s+");
         if (line.length != 3) {
             writer.println("400 Bad Request");
+            writer.println("");
             throw new Exception();
         }
         method = line[0];
         uri = line[1];
         
         //parse HTTP version
-        if (line[2].compareTo("HTTP/1.1") == 0)
-            version = 1;
-        else if (line[2].compareTo("HTTP/1.0") == 0)
-            version = 0;
-        else {
+        if (!line[2].equals("HTTP/1.1")) {
             writer.println("505 HTTP Version Not Supported");
+            writer.println("");
             throw new Exception();
         }
         
@@ -138,6 +132,7 @@ public class ClientHandler implements Runnable {
             uri = uri.substring(7);
         else if (uri.indexOf("http://") > 0) {
             writer.println("400 Bad Request");
+            writer.println("");
             throw new Exception();
         }
         int portIdx;
@@ -146,6 +141,7 @@ public class ClientHandler implements Runnable {
             int pathIdx = uri.indexOf('/');
             if (pathIdx <= portIdx + 1 && pathIdx != -1) {
                 writer.println("400 Bad Request");
+                writer.println("");
                 throw new Exception();
             } else if (pathIdx > portIdx + 1) {
                 port = Integer.valueOf(uri.substring(portIdx + 1, pathIdx));
